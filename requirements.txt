@@ -1,0 +1,3 @@
+python-dotenv>=1.0.0
+# Agentrics SDK — install from the local repo (adjust path if needed)
+-e ../agent-cost-optimizer/sdk/python
