@@ -2,9 +2,9 @@
 Agentrics Demo — Customer Support Pipeline
 
 Simulates a 3-agent pipeline that a customer might run:
-  1. Classifier Agent  — reads a ticket, classifies urgency/category  (Claude Haiku)
+  1. Classifier Agent  — reads a ticket, classifies urgency/category  (Claude Haiku 4.5)
   2. Research Agent    — looks up relevant info based on classification (GPT-4o mini)
-  3. Response Writer   — drafts a customer-facing reply                (Claude 3.5 Sonnet)
+  3. Response Writer   — drafts a customer-facing reply                (Claude Sonnet 4.6)
 
 Uses the Agentrics Python SDK (agent_cost_optimizer) to wrap mock AI clients.
 No real OpenAI/Anthropic API keys are needed — the mock clients return realistic
@@ -57,7 +57,8 @@ class _MockOpenAIChat:
 
 class MockOpenAI:
     """Drop-in mock for openai.OpenAI(). Returns realistic token counts without API calls."""
-    def __init__(self, input_range: tuple, output_range: tuple, latency_range: tuple):
+    def __init__(self, model: str, input_range: tuple, output_range: tuple, latency_range: tuple):
+        self.model = model
         self.chat = _MockOpenAIChat(input_range, output_range, latency_range)
 
 
@@ -86,29 +87,31 @@ class _MockAnthropicMessages:
 
 class MockAnthropic:
     """Drop-in mock for anthropic.Anthropic(). Returns realistic token counts without API calls."""
-    def __init__(self, input_range: tuple, output_range: tuple, latency_range: tuple):
+    def __init__(self, model: str, input_range: tuple, output_range: tuple, latency_range: tuple):
+        self.model = model
         self.messages = _MockAnthropicMessages(input_range, output_range, latency_range)
 
 
 # --- Pipeline setup ---
 
+BASE_URL = os.environ.get("AGENTRICS_BASE_URL") or "https://www.agentrics.io"
 agentrics = Agentrics(api_key=API_KEY)
 
 # Each agent wraps a mock client via the SDK — identical to how a real integration works.
 # Agent names are prefixed with "demo:" so they can be identified and cleared
 # from the dashboard with the "Clear demo data" button.
 classifier = agentrics.wrap_anthropic(
-    MockAnthropic(input_range=(200, 500), output_range=(50, 150), latency_range=(300, 800)),
+    MockAnthropic(model="claude-haiku-4-5-20251001", input_range=(8_000, 20_000), output_range=(200, 800), latency_range=(300, 800)),
     agent_id="demo:classifier-agent",
     agent_name="demo:classifier-agent",
 )
 researcher = agentrics.wrap_openai(
-    MockOpenAI(input_range=(500, 1500), output_range=(200, 600), latency_range=(600, 1500)),
+    MockOpenAI(model="gpt-4o-mini", input_range=(30_000, 80_000), output_range=(1_000, 4_000), latency_range=(600, 1500)),
     agent_id="demo:research-agent",
     agent_name="demo:research-agent",
 )
 writer = agentrics.wrap_anthropic(
-    MockAnthropic(input_range=(800, 2000), output_range=(300, 800), latency_range=(1000, 2500)),
+    MockAnthropic(model="claude-sonnet-4-6", input_range=(8_000, 25_000), output_range=(400, 1_500), latency_range=(1000, 2500)),
     agent_id="demo:response-writer",
     agent_name="demo:response-writer",
 )
@@ -129,20 +132,20 @@ def run_pipeline(ticket: str, run_num: int) -> None:
     print(f"\n  Run #{run_num}: \"{ticket[:60]}{'...' if len(ticket) > 60 else ''}\"")
 
     classifier.messages.create(
-        model="claude-3-haiku-20240307",
+        model=classifier.model,
         max_tokens=256,
         messages=[{"role": "user", "content": f"Classify this support ticket: {ticket}"}],
     )
     print("    [demo:classifier-agent]  done")
 
     researcher.chat.completions.create(
-        model="gpt-4o-mini",
+        model=researcher.model,
         messages=[{"role": "user", "content": f"Find relevant policies for: {ticket}"}],
     )
     print("    [demo:research-agent]    done")
 
     writer.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model=writer.model,
         max_tokens=512,
         messages=[{"role": "user", "content": f"Draft a reply for: {ticket}"}],
     )
@@ -150,12 +153,12 @@ def run_pipeline(ticket: str, run_num: int) -> None:
 
 
 def main():
-    dashboard_url = (os.environ.get("AGENTRICS_BASE_URL") or "https://www.agentrics.io") + "/dashboard"
+    dashboard_url = BASE_URL + "/dashboard"
     print("Agentrics Demo — Customer Support Pipeline")
     print(f"Dashboard: {dashboard_url}")
     print()
 
-    num_runs = random.randint(5, 8)
+    num_runs = random.randint(25, 40)
     tickets = random.choices(SAMPLE_TICKETS, k=num_runs)
 
     print(f"Running {num_runs} support tickets through the 3-agent pipeline...")
